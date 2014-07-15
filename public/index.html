@@ -1,0 +1,182 @@
+﻿<!DOCTYPE html>	
+<html>
+<head>
+	<script type="text/javascript" src="/socket.io/socket.io.js"></script>
+	<script type="text/javascript" src="libs/underscore.js"></script>
+	<script type="text/javascript" src="libs/jquery.min.js"></script>
+	<script type="text/javascript" src="libs/angular.min.js"></script>
+	<script type="text/javascript" src="libs/ng-socket-io.min.js"></script>
+    <!--script type="text/javascript" src="modules/controllers.js"></script-->
+	<script type="text/javascript" src="libs/bootstrap/js/bootstrap.min.js"></script>
+    <link rel="stylesheet" href="libs/bootstrap/css/bootstrap.css">
+
+    <script type="text/javascript">
+    	angular.module('Chat', ['socket-io'])
+		    .controller('mainController', function($scope, socket) {
+
+		    	$scope.users = {};
+
+		    	$scope.user = {
+		    		logged:false
+		    	}
+
+		    	//сообщения текущего диалога
+		    	$scope.messages = [];
+
+		    	//получить от пользователя его имя, прежде чем дать возможность писать
+		        $scope.login = function() {
+		        	$scope.user.logged = true;
+		        	socket.emit('user:login', $scope.user.name);
+		        }
+
+		        //список сообщений диалогов
+		        $scope.dialogsmessages = {};
+
+
+		        //открытие диалога с пользователем
+		        $scope.chatwith = function(user)
+		        {
+
+		        	$scope.chatuser = user;
+
+		        	//сбрасываем счётчик непрочитанных сообщений для этого окна
+		        	if($scope.users[user])
+		        	{
+		        		$scope.users[user].unreaded = 0;
+		        	}
+
+		        	//извлекаем историю сообщшений
+		        	if(_.isUndefined($scope.dialogsmessages[$scope.chatuser]))
+		        	{
+		        		$scope.dialogsmessages[$scope.chatuser] = [];
+		        	}
+
+		        	$scope.messages = _.clone($scope.dialogsmessages[user]);
+		        }
+
+
+		        //отправить собеседнику сообщение
+		        $scope.sendmessage = function (message) {
+
+		        	var newmessage = {from:$scope.user.name, to:$scope.chatuser, message:$scope.message};
+		        	console.log(newmessage)
+		        	socket.emit('send:message', newmessage);
+
+		        	//сохранить в историю
+		        	if(_.isUndefined($scope.dialogsmessages[$scope.chatuser]))
+		        	{
+		        		$scope.dialogsmessages[$scope.chatuser] = [];
+		        	}
+		        	$scope.dialogsmessages[$scope.chatuser].push(newmessage);
+
+		        	//выведем в чат
+		        	$scope.messages.push(_.clone(newmessage));
+
+		        	
+		        	$scope.message = '';
+
+		        	
+		        }
+
+		        //список пользователей в чате
+		        socket.on('users:logged', function (users) {
+		        	_.each(users, function(user) {
+		        		$scope.users[user] = {};
+		        	})
+		        	// $scope.users = users;
+		        });
+
+		        //получить несколько отложенных сообщений
+		        socket.on('chat:messages', function(messages) {
+
+		        	messages = _.isArray(messages)?messages:[messages];
+		        	console.log(messages)
+		        	_.each(messages, function (message) {
+
+		        		//если относится к текущнму диалогу
+		        		if(message.from === $scope.chatuser)
+		        		{
+		        			console.log(message)
+		        			$scope.messages.push(message);
+		        		}
+		        		else
+		        		{
+		        			//увеличиваем счётчик не помеченных
+		        			if(_.isUndefined($scope.users[message.from].unreaded))
+		        			{
+		        				$scope.users[message.from].unreaded = 0;
+		        			}
+
+		        			$scope.users[message.from].unreaded += 1;
+		        		}
+		        		
+		        		//сохраняем в историю
+		        		if(_.isUndefined($scope.dialogsmessages[message.from]))
+			        	{
+			        		$scope.dialogsmessages[message.from] = [];
+			        	}
+		        		
+		        		$scope.dialogsmessages[message.from].push(message);
+		        		
+		        		
+		        	});
+		        });
+		    });
+    </script>
+
+    <style type="text/css">
+    	.mainBlock {
+    		padding: 20px;
+    	}
+
+    	.user {
+    		background-color: #f90;
+    		border-radius: 5px;
+    		padding: 5px;
+    		margin: 5px; 
+    		min-width: 70px;
+    		color:#333;
+    	}
+
+    	.chatuser {
+    		margin-top: 20px;
+    		background-color: #09f;
+    		border-radius: 5px;
+    	}
+
+    	.selected {
+    		background-color: #f30;
+    	}
+
+    </style>
+
+</head>
+<body ng-app="Chat">
+	<div class="mainBlock" ng-controller="mainController">
+		<div ng-hide="user.logged">
+			<label>Введите ваше имя: </label>
+			<input type="text" ng-model="user.name"/>
+			<button ng-click="login()">Войти</button>
+		</div>
+		<div ng-show="user.logged">
+			<div class="userslist">
+				<!-- <span ng-style="{ opacity: (user.name == name)? '0.2' : '0.8' }"> -->
+					<a class="user" ng-repeat="(name, usr) in users" href="#" ng-click="chatwith(name)" ng-style="{ opacity: (user.name == name)? '0.5' : '1.0' }" ng-class="{selected: name==chatuser}">
+						{{name}} <span ng-if="usr.unreaded > 0">({{usr.unreaded}})</span>
+					</a>
+				<!-- </span> -->
+			</div>
+			<div class="chatuser" ng-show="chatuser">
+				<div ng-repeat="message in messages">
+					{{message.from}}>{{message.to}}: {{message.message}}
+				</div>
+			</div>
+			<br>
+			<div ng-show="chatuser">
+				<input type="text"  ng-model="message"/>
+				<button ng-click="sendmessage()">Send</button>
+			</div>
+		</div>
+	</div>
+</body>
+</html>
